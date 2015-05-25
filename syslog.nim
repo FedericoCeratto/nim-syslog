@@ -1,6 +1,6 @@
 #
 #
-#            Nim's Runtime Library
+#            Nim Unix Syslog Library
 #     (c) Copyright 2015 Federico Ceratto
 #
 #    See the file "copying.txt", included in this
