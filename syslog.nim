@@ -91,6 +91,8 @@ let
   severity_names = severity_names_g.toTable
   facility_names = facility_names_g.toTable
 
+# Globals
+var appName = ""
 
 proc array256(s: string): array[0..255, char] =
   var
@@ -136,7 +138,7 @@ proc emit_log(facility, severity, msg: string) {.raises: [].} =
 
   try:
     tstamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
-    logmsg = "<$#>$# $#" % [$pri, $tstamp, msg]
+    logmsg = "<$#>$# $#: $#" % [$pri, $tstamp, $appName, msg]
   except ValueError:
     discard
 
@@ -152,6 +154,8 @@ proc emit_log(facility, severity, msg: string) {.raises: [].} =
 
   discard sock.send(cstring(logmsg), cint(logmsg.len), flag)
 
+proc openlog*(name: string) =
+  appName = name
 
 proc emerg*(msg: string) =
   emit_log(default_facility, "emerg", msg)
