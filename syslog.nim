@@ -146,3 +146,6 @@ proc warn*(msg: string) =
 
 proc warning*(msg: string) =
   emit_log(module_facility, logWarning, msg)
+
+proc syslog*(severity: SeverityEnum, msg:string) =
+  emit_log(module_facility, severity, msg)
