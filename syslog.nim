@@ -12,6 +12,7 @@
 import posix
 import strutils
 import times
+import locks
 
 type
   # severity codes
@@ -53,9 +54,15 @@ const
   default_use_ident_colon = true
 
 # Globals
+# TODO: Ensure locks are not reentrant
+# Module settings
+var glock_module_vars: Lock
 var module_ident = ""  # APP-NAME
 var module_host_ident = ""  # HOSTNAME concatenated with APP-NAME
 var module_facility = default_facility  # facility
+# Syslog socket
+var glock_sock: Lock
+var sock: SocketHandle = SocketHandle(-1)
 
 proc array256(s: string): array[0..255, char] =
   var
@@ -67,50 +74,68 @@ proc array256(s: string): array[0..255, char] =
 
   return result
 
+proc reopen_syslog_connection() =
+  when defined(macosx):
+    const syslog_socket_fname = "/var/run/syslog"
+  else:
+    const syslog_socket_fname = "/dev/log"
+  const syslog_socket_fname_a = syslog_socket_fname.array256
 
-when defined(macosx):
-  const syslog_socket_fname = "/var/run/syslog"
-else:
-  const syslog_socket_fname = "/dev/log"
+  var sock_addr {.global.}: SockAddr = SockAddr(sa_family: posix.AF_UNIX, sa_data: syslog_socket_fname_a)
+  let addr_len {.global.} = Socklen(sizeof(sock_addr))
 
-const syslog_socket_fname_a = syslog_socket_fname.array256
+  acquire(glock_sock)
+  if sock == SocketHandle(-1):
+    sock = socket(AF_UNIX, SOCK_DGRAM, 0)
+  var r = sock.connect(addr sock_addr, addr_len)
+  release(glock_sock)
+  if r != 0:
+    try:
+      writeLine(stderr, "Unable to connect to syslog unix socket " & syslog_socket_fname)
+    except IOError:
+      discard
+
+proc check_sock_and_send(logmsg: string, flag: cint) =
+  acquire(glock_sock)
+  if sock == SocketHandle(-1):
+    release(glock_sock)
+    reopen_syslog_connection()
+  else:
+    release(glock_sock)
+
+  acquire(glock_sock)
+  var r = sock.send(cstring(logmsg), cint(logmsg.len), flag)
+  release(glock_sock)
+
+  if r == -1:
+    if errno == ENOTCONN:
+      reopen_syslog_connection()
 
 proc calculate_priority(facility: FacilityEnum, severity: SeverityEnum): int =
   ## Calculate priority value
   result = (cast[int](facility) shl 3) or cast[int](severity)
 
-proc emit_log(facility: FacilityEnum, severity: SeverityEnum, msg: string) {.raises: [].} =
-
+proc emit_log(severity: SeverityEnum, msg: string) {.raises: [].} =
   var
-    sock_addr: SockAddr
     tstamp: string
     logmsg: string
+    pri: int
 
-  let
-    addr_len = Socklen(sizeof(sock_addr))
-    flag: cint = 0
-    sock = socket(AF_UNIX, SOCK_DGRAM, 0)
-    pri = calculate_priority(facility, severity)
+  let flag: cint = 0
 
   try:
     tstamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
+    acquire(glock_module_vars)
+    pri = calculate_priority(module_facility, severity)
     logmsg = "<$#>$# $#$#" % [$pri, $tstamp, $module_host_ident, msg]
+    release(glock_module_vars)
   except ValueError:
     discard
 
-  sock_addr = SockAddr(sa_family: posix.AF_UNIX, sa_data: syslog_socket_fname_a)
-
-  var r = sock.connect(addr sock_addr, addr_len)
-  if r != 0:
-    try:
-      writeLine(stderr, "Unable to connect to syslog unix socket " & syslog_socket_fname)
-      return
-    except IOError:
-      return
-
-  discard sock.send(cstring(logmsg), cint(logmsg.len), flag)
+  check_sock_and_send(logmsg, flag)
 
 proc openlog*(ident: string = default_ident, facility: FacilityEnum = default_facility, use_ident_colon: bool = default_use_ident_colon) =
+  acquire(glock_module_vars)
   module_ident = ident
   module_facility = facility
   if module_ident != "":
@@ -119,33 +144,35 @@ proc openlog*(ident: string = default_ident, facility: FacilityEnum = default_fa
     # We have to skip HOSTNAME field (write two spaces) if ident is not empty
     # That's why we adding space in the beginning
     module_host_ident = " " & module_ident & " "
+  release(glock_module_vars)
+  reopen_syslog_connection()
 
 proc emerg*(msg: string) =
-  emit_log(module_facility, logEmerg, msg)
+  emit_log(logEmerg, msg)
 
 proc alert*(msg: string) =
-  emit_log(module_facility, logAlert, msg)
+  emit_log(logAlert, msg)
 
 proc crit*(msg: string) =
-  emit_log(module_facility, logCrit, msg)
+  emit_log(logCrit, msg)
 
 proc error*(msg: string) =
-  emit_log(module_facility, logErr, msg)
+  emit_log(logErr, msg)
 
 proc info*(msg: string) =
-  emit_log(module_facility, logInfo, msg)
+  emit_log(logInfo, msg)
 
 proc debug*(msg: string) =
-  emit_log(module_facility, logDebug, msg)
+  emit_log(logDebug, msg)
 
 proc notice*(msg: string) =
-  emit_log(module_facility, logNotice, msg)
+  emit_log(logNotice, msg)
 
 proc warn*(msg: string) =
-  emit_log(module_facility, logWarning, msg)
+  emit_log(logWarning, msg)
 
 proc warning*(msg: string) =
-  emit_log(module_facility, logWarning, msg)
+  emit_log(logWarning, msg)
 
 proc syslog*(severity: SeverityEnum, msg:string) =
-  emit_log(module_facility, severity, msg)
+  emit_log(severity, msg)
