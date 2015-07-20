@@ -11,88 +11,51 @@
 
 import posix
 import strutils
-import tables
 import times
 
-const
+type
   # severity codes
-  log_emerg = 0  # system is unusable
-  log_alert = 1  # action must be taken immediately
-  log_crit = 2  # critical conditions
-  log_err = 3  # error conditions
-  log_warning = 4  # warning conditions
-  log_notice = 5  # normal but significant condition
-  log_info = 6  # informational
-  log_debug = 7  # debug-level messages
-
-  severity_names_g = {
-    "alert": log_alert,
-    "crit": log_crit,
-    "debug": log_debug,
-    "emerg": log_emerg,
-    "err": log_err,
-    "error": log_err, # deprecated
-    "info": log_info,
-    "notice": log_notice,
-    "panic": log_emerg, # deprecated
-    "warn": log_warning, # deprecated
-    "warning": log_warning,
-  }
-
+  SeverityEnum* = enum
+    logEmerg = 0  # system is unusable
+    logAlert = 1  # action must be taken immediately
+    logCrit = 2  # critical conditions
+    logErr = 3  # error conditions
+    logWarning = 4  # warning conditions
+    logNotice = 5  # normal but significant condition
+    logInfo = 6  # informational
+    logDebug = 7  # debug-level messages
   # facility codes
-  log_kern = 0  # kernel messages
-  log_user = 1  # random user-level messages
-  log_mail = 2  # mail system
-  log_daemon = 3  # system daemons
-  log_auth = 4  # security/authorization messages
-  log_syslog = 5  # messages generated internally by syslogd
-  log_lpr = 6  # line printer subsystem
-  log_news = 7  # network news subsystem
-  log_uucp = 8  # uucp subsystem
-  log_cron = 9  # clock daemon
-  log_authpriv = 10  # security/authorization messages (private)
+  FacilityEnum* = enum
+    logKern = 0  # kernel messages
+    logUser = 1  # random user-level messages
+    logMail = 2  # mail system
+    logDaemon = 3  # system daemons
+    logAuth = 4  # security/authorization messages
+    logSyslog = 5  # messages generated internally by syslogd
+    logLpr = 6  # line printer subsystem
+    logNews = 7  # network news subsystem
+    logUucp = 8  # uucp subsystem
+    logCron = 9  # clock daemon
+    logAuthpriv = 10  # security/authorization messages (private)
+    # other codes through 15 reserved for system use
+    logLocal0 = 16  # reserved for local use
+    logLocal1 = 17  # reserved for local use
+    logLocal2 = 18  # reserved for local use
+    logLocal3 = 19  # reserved for local use
+    logLocal4 = 20  # reserved for local use
+    logLocal5 = 21  # reserved for local use
+    logLocal6 = 22  # reserved for local use
+    logLocal7 = 23  # reserved for local use
 
-  # other codes through 15 reserved for system use
-  log_local0 = 16  # reserved for local use
-  log_local1 = 17  # reserved for local use
-  log_local2 = 18  # reserved for local use
-  log_local3 = 19  # reserved for local use
-  log_local4 = 20  # reserved for local use
-  log_local5 = 21  # reserved for local use
-  log_local6 = 22  # reserved for local use
-  log_local7 = 23  # reserved for local use
-
-  facility_names_g = {
-    "auth": log_auth,
-    "authpriv": log_authpriv,
-    "cron": log_cron,
-    "daemon": log_daemon,
-    "kern": log_kern,
-    "lpr": log_lpr,
-    "mail": log_mail,
-    "news": log_news,
-    "security": log_auth, # deprecated
-    "syslog": log_syslog,
-    "user": log_user,
-    "uucp": log_uucp,
-    "local0": log_local0,
-    "local1": log_local1,
-    "local2": log_local2,
-    "local3": log_local3,
-    "local4": log_local4,
-    "local5": log_local5,
-    "local6": log_local6,
-    "local7": log_local7,
-  }
-
-  default_facility = "user"
-
-let
-  severity_names = severity_names_g.toTable
-  facility_names = facility_names_g.toTable
+const
+  default_ident = ""
+  default_facility = logUser
+  default_use_ident_colon = true
 
 # Globals
-var appName = ""
+var module_ident = ""
+var module_host_ident = ""
+var module_facility = default_facility
 
 proc array256(s: string): array[0..255, char] =
   var
@@ -113,17 +76,11 @@ else:
 
 const syslog_socket_fname_a = syslog_socket_fname.array256
 
-
-proc calculate_priority(facility: string, severity: string): int =
+proc calculate_priority(facility: FacilityEnum, severity: SeverityEnum): int =
   ## Calculate priority value
-  let
-    f = facility_names[facility]
-    s = severity_names[severity]
+  result = (cast[int](facility) shl 3) or cast[int](severity)
 
-  result = (f shl 3) or s
-
-
-proc emit_log(facility, severity, msg: string) {.raises: [].} =
+proc emit_log(facility: FacilityEnum, severity: SeverityEnum, msg: string) {.raises: [].} =
 
   var
     sock_addr: SockAddr
@@ -138,7 +95,7 @@ proc emit_log(facility, severity, msg: string) {.raises: [].} =
 
   try:
     tstamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
-    logmsg = "<$#>$# $#: $#" % [$pri, $tstamp, $appName, msg]
+    logmsg = "<$#>$# $#$#" % [$pri, $tstamp, $module_host_ident, msg]
   except ValueError:
     discard
 
@@ -154,32 +111,37 @@ proc emit_log(facility, severity, msg: string) {.raises: [].} =
 
   discard sock.send(cstring(logmsg), cint(logmsg.len), flag)
 
-proc openlog*(name: string) =
-  appName = name
+proc openlog*(ident: string = default_ident, facility: FacilityEnum = default_facility, use_ident_colon: bool = default_use_ident_colon) =
+  module_ident = ident
+  module_facility = facility
+  if module_ident != "":
+    if use_ident_colon:
+      module_ident.add(":")
+    module_host_ident = " " & module_ident & " "
 
 proc emerg*(msg: string) =
-  emit_log(default_facility, "emerg", msg)
+  emit_log(module_facility, logEmerg, msg)
 
 proc alert*(msg: string) =
-  emit_log(default_facility, "alert", msg)
+  emit_log(module_facility, logAlert, msg)
 
 proc crit*(msg: string) =
-  emit_log(default_facility, "crit", msg)
+  emit_log(module_facility, logCrit, msg)
 
 proc error*(msg: string) =
-  emit_log(default_facility, "error", msg)
+  emit_log(module_facility, logErr, msg)
 
 proc info*(msg: string) =
-  emit_log(default_facility, "info", msg)
+  emit_log(module_facility, logInfo, msg)
 
 proc debug*(msg: string) =
-  emit_log(default_facility, "debug", msg)
+  emit_log(module_facility, logDebug, msg)
 
 proc notice*(msg: string) =
-  emit_log(default_facility, "notice", msg)
+  emit_log(module_facility, logNotice, msg)
 
 proc warn*(msg: string) =
-  emit_log(default_facility, "warning", msg)
+  emit_log(module_facility, logWarning, msg)
 
 proc warning*(msg: string) =
-  emit_log(default_facility, "warning", msg)
+  emit_log(module_facility, logWarning, msg)
