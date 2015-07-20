@@ -53,13 +53,12 @@ const
   default_use_ident_colon = true
 
 # Globals
-var module_ident = ""
-var module_host_ident = ""
-var module_facility = default_facility
+var module_ident = ""  # APP-NAME
+var module_host_ident = ""  # HOSTNAME concatenated with APP-NAME
+var module_facility = default_facility  # facility
 
 proc array256(s: string): array[0..255, char] =
   var
-    result: array[0..255, char]
     cnt = 0
 
   for i in s:
@@ -104,7 +103,7 @@ proc emit_log(facility: FacilityEnum, severity: SeverityEnum, msg: string) {.rai
   var r = sock.connect(addr sock_addr, addr_len)
   if r != 0:
     try:
-      writeln(stderr, "Unable to connect to syslog unix socket " & syslog_socket_fname)
+      writeLine(stderr, "Unable to connect to syslog unix socket " & syslog_socket_fname)
       return
     except IOError:
       return
@@ -117,6 +116,8 @@ proc openlog*(ident: string = default_ident, facility: FacilityEnum = default_fa
   if module_ident != "":
     if use_ident_colon:
       module_ident.add(":")
+    # We have to skip HOSTNAME field (write two spaces) if ident is not empty
+    # That's why we adding space in the beginning
     module_host_ident = " " & module_ident & " "
 
 proc emerg*(msg: string) =
