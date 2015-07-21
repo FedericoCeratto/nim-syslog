@@ -3,7 +3,7 @@
 #            Nim Unix Syslog Library
 #     (c) Copyright 2015 Federico Ceratto
 #
-#    See the file "copying.txt", included in this
+#    See the file "LICENSE", included in this
 #    distribution, for details about the copyright.
 #
 
