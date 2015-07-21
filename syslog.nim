@@ -16,7 +16,7 @@ import times
 import locks
 
 # Maximum ident (APP-NAME) length - it is limited for GC safety
-const ident_max_lengh = 1024
+const identMaxLengh = 1024
 
 type
   # severity codes
@@ -52,7 +52,7 @@ type
     logLocal6 = 22  # reserved for local use
     logLocal7 = 23  # reserved for local use
   # Type to store module ident gcsafe way
-  IdentArray = tuple[length: int, content: array[0..ident_max_lengh-1, char]]
+  IdentArray = tuple[length: int, content: array[0..identMaxLengh-1, char]]
 
 # Helper procs
 proc array256(s: string): array[0..255, char] =
@@ -64,7 +64,7 @@ proc array256(s: string): array[0..255, char] =
     result[cnt] = i
     cnt.inc()
 
-proc string_to_ident_array(s: string): IdentArray =
+proc stringToIdentArray(s: string): IdentArray =
   var
     cnt = 0
   for i in s:
@@ -74,17 +74,17 @@ proc string_to_ident_array(s: string): IdentArray =
     cnt.inc()
   result.length = cnt
 
-proc ident_array_to_string(arr: IdentArray): string =
+proc identArrayToString(arr: IdentArray): string =
   result = newString(arr.length)
   for i in 0..arr.length-1:
     result[i] = arr.content[i]
   result[arr.length] = '\0'
 
-proc calculate_priority(facility: SyslogFacility, severity: SyslogSeverity): int =
+proc calculatePriority(facility: SyslogFacility, severity: SyslogSeverity): int =
   ## Calculate priority value
   result = (cast[int](facility) shl 3) or cast[int](severity)
 
-proc make_host_ident(ident: string): string =
+proc makeHostIdent(ident: string): string =
   if ident != "":
     # We have to skip HOSTNAME field (write two spaces) if ident is not empty
     # That's why we adding space in the beginning
@@ -93,7 +93,7 @@ proc make_host_ident(ident: string): string =
     result = ""
 
 # TODO: Use reliable algorithm for all OSes
-proc app_name(): string =
+proc appName(): string =
   result = getAppFilename().extractFilename()
 
 # Constants
@@ -103,20 +103,20 @@ else:
   const syslog_socket_fname = "/dev/log"
 const
   syslog_socket_fname_a = syslog_socket_fname.array256
-  default_ident = ""
-  default_facility = logUser
+  defaultIdent = ""
+  defaultFacility = logUser
 
 # Globals
 # TODO: Ensure lock is not reentrant
-var glock_syslog: Lock
+var gLockSyslog: Lock
 # Module settings
-var module_ident = app_name().string_to_ident_array()  # APP-NAME
-var module_facility = default_facility
+var moduleIdent = appName().stringToIdentArray()  # APP-NAME
+var moduleFacility = defaultFacility
 # Syslog socket
 var sock: SocketHandle = SocketHandle(-1)
 
 # Internal procs (used inside critical section)
-proc reopen_syslog_connection_internal() =
+proc reopenSyslogConnectionInternal() =
   var sock_addr {.global.}: SockAddr = SockAddr(sa_family: posix.AF_UNIX, sa_data: syslog_socket_fname_a)
   let addr_len {.global.} = Socklen(sizeof(sock_addr))
   if sock == SocketHandle(-1):
@@ -128,67 +128,68 @@ proc reopen_syslog_connection_internal() =
     except IOError:
       discard
 
-proc openlog_internal(ident: string, facility: SyslogFacility) =
-  module_ident = ident.string_to_ident_array()
+proc openlogInternal(ident: string, facility: SyslogFacility) =
+  module_ident = ident.stringToIdentArray()
   module_facility = facility
-  reopen_syslog_connection_internal()
+  reopenSyslogConnectionInternal()
 
-proc check_sock_and_send_internal(logmsg: string, flag: cint) =
+proc checkSockAndSendInternal(logMsg: string, flag: cint) =
   if sock == SocketHandle(-1):
-    reopen_syslog_connection_internal()
-  var r = sock.send(cstring(logmsg), cint(logmsg.len), flag)
+    reopenSyslogConnectionInternal()
+  var r = sock.send(cstring(logMsg), cint(logMsg.len), flag)
   if r == -1:
     if errno == ENOTCONN:  # TODO: Ensure errno is thread-safe
-      reopen_syslog_connection_internal()
+      reopenSyslogConnectionInternal()
 
 # Send syslog message proc (acquires global syslog lock)
-proc emit_log(severity: SyslogSeverity, msg: string) =
-  let flag: cint = 0
+proc emitLog(severity: SyslogSeverity, msg: string) =
+  let
+    flag: cint = 0
   var
-    tstamp: string
-    logmsg: string
     pri: int
-    host_ident: string
-  acquire(glock_syslog)
-  defer: release(glock_syslog)
-  tstamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
-  pri = calculate_priority(module_facility, severity)
-  host_ident = make_host_ident(module_ident.ident_array_to_string())
-  logmsg = "<$#>$# $#$#" % [$pri, $tstamp, $host_ident, msg]
-  check_sock_and_send_internal(logmsg, flag)
+    timeStamp: string
+    logMsg: string
+    hostIdent: string
+  acquire(gLockSyslog)
+  defer: release(gLockSyslog)
+  pri = calculate_priority(moduleFacility, severity)
+  timeStamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
+  hostIdent = make_host_ident(module_ident.ident_array_to_string())
+  logMsg = "<$#>$# $#$#" % [$pri, $timeStamp, $hostIdent, msg]
+  checkSockAndSendInternal(logMsg, flag)
 
 # Exported procs
-proc openlog*(ident: string = default_ident, facility: SyslogFacility = default_facility) {.gcsafe.} =
-  acquire(glock_syslog)
-  defer: release(glock_syslog)
-  openlog_internal(ident, facility)
+proc openlog*(ident: string = defaultIdent, facility: SyslogFacility = defaultFacility) {.gcsafe.} =
+  acquire(gLockSyslog)
+  defer: release(gLockSyslog)
+  openlogInternal(ident, facility)
 
 proc emerg*(msg: string) {.gcsafe.} =
-  emit_log(logEmerg, msg)
+  emitLog(logEmerg, msg)
 
 proc alert*(msg: string) {.gcsafe.} =
-  emit_log(logAlert, msg)
+  emitLog(logAlert, msg)
 
 proc crit*(msg: string) {.gcsafe.} =
-  emit_log(logCrit, msg)
+  emitLog(logCrit, msg)
 
 proc error*(msg: string) {.gcsafe.} =
-  emit_log(logErr, msg)
+  emitLog(logErr, msg)
 
 proc info*(msg: string) {.gcsafe.} =
-  emit_log(logInfo, msg)
+  emitLog(logInfo, msg)
 
 proc debug*(msg: string) {.gcsafe.} =
-  emit_log(logDebug, msg)
+  emitLog(logDebug, msg)
 
 proc notice*(msg: string) {.gcsafe.} =
-  emit_log(logNotice, msg)
+  emitLog(logNotice, msg)
 
 proc warn*(msg: string) {.gcsafe.} =
-  emit_log(logWarning, msg)
+  emitLog(logWarning, msg)
 
 proc warning*(msg: string) {.gcsafe.} =
-  emit_log(logWarning, msg)
+  emitLog(logWarning, msg)
 
 proc syslog*(severity: SyslogSeverity, msg:string) {.gcsafe.} =
-  emit_log(severity, msg)
+  emitLog(severity, msg)

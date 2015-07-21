@@ -10,16 +10,16 @@ import syslog
 
 const maxIterations = 10
 
-proc mylog(id: string) =
+proc myLog(id: string) =
     for i in 0..maxIterations:
         syslog.openlog(id & "_" & $i)
         sleep(50)
         syslog.alert(id & "_" & $i)
 
-spawn mylog("THREAD0")
+spawn myLog("THREAD0")
 sync()
 
-spawn mylog("THREAD1")
+spawn myLog("THREAD1")
 sleep(170)
-spawn mylog("THREAD2")
+spawn myLog("THREAD2")
 sync()
