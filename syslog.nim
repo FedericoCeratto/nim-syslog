@@ -10,13 +10,14 @@
 ## Module for Unix Syslog
 
 import posix
+import os
 import strutils
 import times
 import locks
 
 type
   # severity codes
-  SeverityEnum* = enum
+  SyslogSeverity* = enum
     logEmerg = 0  # system is unusable
     logAlert = 1  # action must be taken immediately
     logCrit = 2  # critical conditions
@@ -26,7 +27,7 @@ type
     logInfo = 6  # informational
     logDebug = 7  # debug-level messages
   # facility codes
-  FacilityEnum* = enum
+  SyslogFacility* = enum
     logKern = 0  # kernel messages
     logUser = 1  # random user-level messages
     logMail = 2  # mail system
@@ -48,104 +49,97 @@ type
     logLocal6 = 22  # reserved for local use
     logLocal7 = 23  # reserved for local use
 
-const
-  default_ident = ""
-  default_facility = logUser
-  default_use_ident_colon = true
-
-# Globals
-# TODO: Ensure locks are not reentrant
-# Module settings
-var glock_module_vars: Lock
-var module_ident = ""  # APP-NAME
-var module_host_ident = ""  # HOSTNAME concatenated with APP-NAME
-var module_facility = default_facility  # facility
-# Syslog socket
-var glock_sock: Lock
-var sock: SocketHandle = SocketHandle(-1)
-
+# Helper procs
 proc array256(s: string): array[0..255, char] =
   var
     cnt = 0
-
   for i in s:
     result[cnt] = i
     cnt.inc()
-
   return result
 
-proc reopen_syslog_connection() =
-  when defined(macosx):
-    const syslog_socket_fname = "/var/run/syslog"
-  else:
-    const syslog_socket_fname = "/dev/log"
-  const syslog_socket_fname_a = syslog_socket_fname.array256
+proc calculate_priority(facility: SyslogFacility, severity: SyslogSeverity): int =
+  ## Calculate priority value
+  result = (cast[int](facility) shl 3) or cast[int](severity)
 
+proc make_host_ident(ident: string): string =
+  if ident != "":
+    # We have to skip HOSTNAME field (write two spaces) if ident is not empty
+    # That's why we adding space in the beginning
+    result = " " & ident & ": "
+  else:
+    result = ""
+
+# TODO: Use reliable algorithm for all OSes
+proc app_name(): string =
+  result = getAppFilename().extractFilename()
+
+# Constants
+when defined(macosx):
+  const syslog_socket_fname = "/var/run/syslog"
+else:
+  const syslog_socket_fname = "/dev/log"
+const
+  syslog_socket_fname_a = syslog_socket_fname.array256
+  default_ident = ""
+  default_facility = logUser
+
+# Globals
+# TODO: Ensure lock is not reentrant
+var glock_syslog: Lock
+# Module settings
+var module_ident = app_name()  # APP-NAME
+var module_host_ident = make_host_ident(module_ident)  # HOSTNAME concatenated with APP-NAME
+var module_facility = default_facility
+# Syslog socket
+var sock: SocketHandle = SocketHandle(-1)
+
+# Internal procs (used inside critical section)
+proc reopen_syslog_connection_internal() =
   var sock_addr {.global.}: SockAddr = SockAddr(sa_family: posix.AF_UNIX, sa_data: syslog_socket_fname_a)
   let addr_len {.global.} = Socklen(sizeof(sock_addr))
-
-  acquire(glock_sock)
   if sock == SocketHandle(-1):
     sock = socket(AF_UNIX, SOCK_DGRAM, 0)
   var r = sock.connect(addr sock_addr, addr_len)
-  release(glock_sock)
   if r != 0:
     try:
       writeLine(stderr, "Unable to connect to syslog unix socket " & syslog_socket_fname)
     except IOError:
       discard
 
-proc check_sock_and_send(logmsg: string, flag: cint) =
-  acquire(glock_sock)
+proc openlog_internal(ident: string, facility: SyslogFacility) =
+  module_ident = ident
+  module_facility = facility
+  module_host_ident = make_host_ident(module_ident)
+  reopen_syslog_connection_internal()
+
+proc check_sock_and_send_internal(logmsg: string, flag: cint) =
   if sock == SocketHandle(-1):
-    release(glock_sock)
-    reopen_syslog_connection()
-  else:
-    release(glock_sock)
-
-  acquire(glock_sock)
+    reopen_syslog_connection_internal()
   var r = sock.send(cstring(logmsg), cint(logmsg.len), flag)
-  release(glock_sock)
-
   if r == -1:
-    if errno == ENOTCONN:
-      reopen_syslog_connection()
+    if errno == ENOTCONN:  # TODO: Ensure errno is thread-safe
+      reopen_syslog_connection_internal()
 
-proc calculate_priority(facility: FacilityEnum, severity: SeverityEnum): int =
-  ## Calculate priority value
-  result = (cast[int](facility) shl 3) or cast[int](severity)
-
-proc emit_log(severity: SeverityEnum, msg: string) {.raises: [].} =
+# Send syslog message proc (acquires global syslog lock)
+proc emit_log(severity: SyslogSeverity, msg: string) =
+  let flag: cint = 0
   var
     tstamp: string
     logmsg: string
     pri: int
+  acquire(glock_syslog)
+  defer: release(glock_syslog)
+  tstamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
+  pri = calculate_priority(module_facility, severity)
+  logmsg = "<$#>$# $#$#" % [$pri, $tstamp, $module_host_ident, msg]
+  check_sock_and_send_internal(logmsg, flag)
 
-  let flag: cint = 0
-
-  try:
-    tstamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
-    acquire(glock_module_vars)
-    pri = calculate_priority(module_facility, severity)
-    logmsg = "<$#>$# $#$#" % [$pri, $tstamp, $module_host_ident, msg]
-    release(glock_module_vars)
-  except ValueError:
-    discard
-
-  check_sock_and_send(logmsg, flag)
-
-proc openlog*(ident: string = default_ident, facility: FacilityEnum = default_facility, use_ident_colon: bool = default_use_ident_colon) =
-  acquire(glock_module_vars)
-  module_ident = ident
-  module_facility = facility
-  if module_ident != "":
-    if use_ident_colon:
-      module_ident.add(":")
-    # We have to skip HOSTNAME field (write two spaces) if ident is not empty
-    # That's why we adding space in the beginning
-    module_host_ident = " " & module_ident & " "
-  release(glock_module_vars)
-  reopen_syslog_connection()
+# Exported procs
+proc openlog*(ident: string = default_ident, facility: SyslogFacility = default_facility) =
+  acquire(glock_syslog)
+  defer: release(glock_syslog)
+  openlog_internal(ident, facility)
 
 proc emerg*(msg: string) =
   emit_log(logEmerg, msg)
@@ -174,5 +168,5 @@ proc warn*(msg: string) =
 proc warning*(msg: string) =
   emit_log(logWarning, msg)
 
-proc syslog*(severity: SeverityEnum, msg:string) =
+proc syslog*(severity: SyslogSeverity, msg:string) =
   emit_log(severity, msg)
