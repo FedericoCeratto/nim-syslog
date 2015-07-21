@@ -10,6 +10,7 @@ syslog.openlog("MyApp", logUser)  # optional
 syslog.info("Good news")
 syslog.debug("Psst")
 syslog(logAlert, "Alert!")
+syslog.closelog()  # optional
 ```
 
 Supported priorities: emerg, alert, crit, error, info, debug, notice, warn[ing]
