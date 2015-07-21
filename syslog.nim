@@ -128,10 +128,20 @@ proc reopenSyslogConnectionInternal() =
     except IOError:
       discard
 
-proc openlogInternal(ident: string, facility: SyslogFacility) =
-  module_ident = ident.stringToIdentArray()
-  module_facility = facility
+proc closeSyslogConnectionInternal() =
+  if sock != SocketHandle(-1):
+    discard sock.close()
+    sock = SocketHandle(-1)
+
+proc openLogInternal(ident: string, facility: SyslogFacility) =
+  moduleIdent = ident.stringToIdentArray()
+  moduleFacility = facility
   reopenSyslogConnectionInternal()
+
+proc closeLogInternal() =
+  moduleIdent = appName().stringToIdentArray()
+  moduleFacility = defaultFacility
+  closeSyslogConnectionInternal()
 
 proc checkSockAndSendInternal(logMsg: string, flag: cint) =
   if sock == SocketHandle(-1):
@@ -162,7 +172,12 @@ proc emitLog(severity: SyslogSeverity, msg: string) =
 proc openlog*(ident: string = defaultIdent, facility: SyslogFacility = defaultFacility) {.gcsafe.} =
   acquire(gLockSyslog)
   defer: release(gLockSyslog)
-  openlogInternal(ident, facility)
+  openLogInternal(ident, facility)
+
+proc closelog*() {.gcsafe.} =
+  acquire(gLockSyslog)
+  defer: release(gLockSyslog)
+  closeLogInternal()
 
 proc emerg*(msg: string) {.gcsafe.} =
   emitLog(logEmerg, msg)
