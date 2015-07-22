@@ -94,7 +94,10 @@ proc makeHostIdent(ident: string): string =
 
 # TODO: Use reliable algorithm for all OSes
 proc appName(): string =
-  result = getAppFilename().extractFilename()
+  try:
+    result = getAppFilename().extractFilename()
+  except IndexError:
+    result = ""
 
 # Constants
 when defined(macosx):
@@ -139,9 +142,9 @@ proc openLogInternal(ident: string, facility: SyslogFacility) =
   reopenSyslogConnectionInternal()
 
 proc closeLogInternal() =
-  moduleIdent = appName().stringToIdentArray()
-  moduleFacility = defaultFacility
-  closeSyslogConnectionInternal()
+    moduleIdent = appName().stringToIdentArray()
+    moduleFacility = defaultFacility
+    closeSyslogConnectionInternal()
 
 proc checkSockAndSendInternal(logMsg: string, flag: cint) =
   if sock == SocketHandle(-1):
@@ -163,48 +166,51 @@ proc emitLog(severity: SyslogSeverity, msg: string) =
   acquire(gLockSyslog)
   defer: release(gLockSyslog)
   pri = calculate_priority(moduleFacility, severity)
-  timeStamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
-  hostIdent = make_host_ident(module_ident.ident_array_to_string())
-  logMsg = "<$#>$# $#$#" % [$pri, $timeStamp, $hostIdent, msg]
-  checkSockAndSendInternal(logMsg, flag)
+  try:
+    timeStamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
+    hostIdent = make_host_ident(moduleIdent.identArrayToString())
+    logMsg = "<$#>$# $#$#" % [$pri, $timeStamp, $hostIdent, msg]
+    checkSockAndSendInternal(logMsg, flag)
+  except ValueError:
+    discard
 
 # Exported procs
-proc openlog*(ident: string = defaultIdent, facility: SyslogFacility = defaultFacility) {.gcsafe.} =
+proc openlog*(ident: string = defaultIdent, facility: SyslogFacility = defaultFacility) {.raises: [], gcsafe.} =
   acquire(gLockSyslog)
   defer: release(gLockSyslog)
   openLogInternal(ident, facility)
 
-proc closelog*() {.gcsafe.} =
+proc closelog*() {.raises: [], gcsafe.} =
   acquire(gLockSyslog)
   defer: release(gLockSyslog)
   closeLogInternal()
 
-proc emerg*(msg: string) {.gcsafe.} =
+proc emerg*(msg: string) {.raises: [], gcsafe.} =
   emitLog(logEmerg, msg)
 
-proc alert*(msg: string) {.gcsafe.} =
+proc alert*(msg: string) {.raises: [], gcsafe.} =
   emitLog(logAlert, msg)
 
-proc crit*(msg: string) {.gcsafe.} =
+proc crit*(msg: string) {.raises: [], gcsafe.} =
   emitLog(logCrit, msg)
 
-proc error*(msg: string) {.gcsafe.} =
+proc error*(msg: string) {.raises: [], gcsafe.} =
   emitLog(logErr, msg)
 
-proc info*(msg: string) {.gcsafe.} =
+proc info*(msg: string) {.raises: [], gcsafe.} =
   emitLog(logInfo, msg)
 
-proc debug*(msg: string) {.gcsafe.} =
+proc debug*(msg: string) {.raises: [], gcsafe.} =
   emitLog(logDebug, msg)
 
-proc notice*(msg: string) {.gcsafe.} =
+proc notice*(msg: string) {.raises: [], gcsafe.} =
   emitLog(logNotice, msg)
 
-proc warn*(msg: string) {.gcsafe.} =
+proc warn*(msg: string) {.raises: [], gcsafe.} =
   emitLog(logWarning, msg)
 
-proc warning*(msg: string) {.gcsafe.} =
+proc warning*(msg: string) {.raises: [], gcsafe.} =
   emitLog(logWarning, msg)
 
-proc syslog*(severity: SyslogSeverity, msg:string) {.gcsafe.} =
+proc syslog*(severity: SyslogSeverity, msg:string) {.raises: [], gcsafe.} =
   emitLog(severity, msg)
