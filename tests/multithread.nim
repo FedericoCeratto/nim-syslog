@@ -1,3 +1,4 @@
+# Compile with --threads:on
 # Purpose of this test is to ensure that syslog module is thread-safe
 # THREAD0 is expected to output same counter in APP-NAME and message content
 # THREAD1 and THREAD2 are expected to output somethimes different counters

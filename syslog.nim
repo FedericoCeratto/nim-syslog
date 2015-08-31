@@ -9,11 +9,15 @@
 
 ## Module for Unix Syslog
 
+# Determine compile options
+const threadsOptionOn = compileOption("threads")
+
 import posix
 import os
 import strutils
 import times
-import locks
+when threadsOptionOn:
+  import locks
 
 # Maximum ident (APP-NAME) length - it is limited for GC safety
 const identMaxLengh = 1024
@@ -111,12 +115,22 @@ const
 
 # Globals
 # TODO: Ensure lock is not reentrant
-var gLockSyslog: Lock
+when threadsOptionOn:
+  var gLockSyslog: Lock
 # Module settings
 var moduleIdent = appName().stringToIdentArray()  # APP-NAME
 var moduleFacility = defaultFacility
 # Syslog socket
 var sock: SocketHandle = SocketHandle(-1)
+
+# Locking procedures (lock is acquired only if "--threads:on" is enabled)
+proc acquireSyslogLock() =
+  when threadsOptionOn:
+    acquire(gLockSyslog)
+
+proc releaseSyslogLock() =
+  when threadsOptionOn:
+    release(gLockSyslog)
 
 # Internal procs (used inside critical section)
 proc reopenSyslogConnectionInternal() =
@@ -163,8 +177,8 @@ proc emitLog(severity: SyslogSeverity, msg: string) =
     timeStamp: string
     logMsg: string
     hostIdent: string
-  acquire(gLockSyslog)
-  defer: release(gLockSyslog)
+  acquireSyslogLock()
+  defer: releaseSyslogLock()
   pri = calculate_priority(moduleFacility, severity)
   try:
     timeStamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
@@ -176,13 +190,13 @@ proc emitLog(severity: SyslogSeverity, msg: string) =
 
 # Exported procs
 proc openlog*(ident: string = defaultIdent, facility: SyslogFacility = defaultFacility) {.raises: [], gcsafe.} =
-  acquire(gLockSyslog)
-  defer: release(gLockSyslog)
+  acquireSyslogLock()
+  defer: releaseSyslogLock()
   openLogInternal(ident, facility)
 
 proc closelog*() {.raises: [], gcsafe.} =
-  acquire(gLockSyslog)
-  defer: release(gLockSyslog)
+  acquireSyslogLock()
+  defer: releaseSyslogLock()
   closeLogInternal()
 
 proc emerg*(msg: string) {.raises: [], gcsafe.} =
