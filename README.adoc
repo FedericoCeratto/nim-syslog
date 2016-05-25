@@ -2,8 +2,8 @@
 
 A simple syslog module for Nim. Supports Linux, BSD and Mac OS X.
 
-image:https://circleci-tkn.rhcloud.com/api/v1/project/FedericoCeratto/packages/tree/circleci/latest/artifacts/syslog.version.svg[version]
-image:https://circleci-tkn.rhcloud.com/api/v1/project/FedericoCeratto/packages/tree/circleci/latest/artifacts/syslog.svg[status]
+image:https://circleci-tkn.rhcloud.com/api/v1/project/FedericoCeratto/packages/tree/circleci/latest/artifacts/syslog.version.svg[version,link="https://circleci-tkn.rhcloud.com/api/v1/project/FedericoCeratto/packages/tree/circleci/latest/artifacts/syslog.html"]
+image:https://circleci-tkn.rhcloud.com/api/v1/project/FedericoCeratto/packages/tree/circleci/latest/artifacts/syslog.svg[status,link="https://circleci-tkn.rhcloud.com/api/v1/project/FedericoCeratto/packages/tree/circleci/latest/artifacts/syslog.html"]
 
 Usage:
 
