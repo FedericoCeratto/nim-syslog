@@ -100,7 +100,7 @@ proc makeHostIdent(ident: string): string =
 proc appName(): string =
   try:
     result = getAppFilename().extractFilename()
-  except IndexError:
+  except IndexError, OSError:
     result = ""
 
 # Constants
