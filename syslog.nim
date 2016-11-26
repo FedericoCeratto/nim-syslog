@@ -59,11 +59,11 @@ type
   IdentArray = tuple[length: int, content: array[0..identMaxLengh-1, char]]
 
 # Helper procs
-proc array256(s: string): array[0..255, char] =
+proc array_sockaddr_un(s: string): array[0..Sockaddr_un_path_length-1, char] =
   var
     cnt = 0
   for i in s:
-    if cnt > 254:
+    if cnt >= Sockaddr_un_path_length-1: # We should leave space for ending '\0' (address should be null-terminated)
       break
     result[cnt] = i
     cnt.inc()
@@ -109,7 +109,7 @@ when defined(macosx):
 else:
   const syslog_socket_fname = "/dev/log"
 const
-  syslog_socket_fname_a = syslog_socket_fname.array256
+  syslog_socket_fname_a = syslog_socket_fname.array_sockaddr_un
   defaultIdent = ""
   defaultFacility = logUser
 
@@ -134,11 +134,11 @@ proc releaseSyslogLock() =
 
 # Internal procs (used inside critical section)
 proc reopenSyslogConnectionInternal() =
-  var sock_addr {.global.}: SockAddr = SockAddr(sa_family: posix.AF_UNIX, sa_data: syslog_socket_fname_a)
+  var sock_addr {.global.}: Sockaddr_un = Sockaddr_un(sun_family: posix.AF_UNIX, sun_path: syslog_socket_fname_a)
   let addr_len {.global.} = Socklen(sizeof(sock_addr))
   if sock == SocketHandle(-1):
     sock = socket(AF_UNIX, SOCK_DGRAM, 0)
-  var r = sock.connect(addr sock_addr, addr_len)
+  var r = sock.connect(cast[ptr SockAddr](addr sock_addr), addr_len)
   if r != 0:
     try:
       writeLine(stderr, "Unable to connect to syslog unix socket " & syslog_socket_fname)

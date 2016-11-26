@@ -1,6 +1,6 @@
 [Package]
 name          = "syslog"
-version       = "0.0.2"
+version       = "0.0.3"
 author        = "Federico Ceratto"
 description   = """Minimal syslog support."""
 license       = "LGPLv3"
