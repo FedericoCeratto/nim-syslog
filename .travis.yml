@@ -13,7 +13,9 @@ before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then brew install nim ; fi
 
 script:
-    - nim c -p=. --cc:$CC --verbosity:0 -r tests/singlethread.nim
+    - nim c -p=. --threads:off --cc:$CC --verbosity:0 -r tests/singlethread.nim
+    - nim c -p=. --threads:on  --cc:$CC --verbosity:0 -r tests/singlethread.nim
+    - nim c -p=. --threads:on  --cc:$CC --verbosity:0 -r tests/multithread.nim
 
 branches:
   except:
