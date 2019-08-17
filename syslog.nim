@@ -134,7 +134,7 @@ proc releaseSyslogLock() =
 
 # Internal procs (used inside critical section)
 proc reopenSyslogConnectionInternal() =
-  var sock_addr {.global.}: Sockaddr_un = Sockaddr_un(sun_family: posix.AF_UNIX, sun_path: syslog_socket_fname_a)
+  var sock_addr {.global.}: Sockaddr_un = Sockaddr_un(sun_family: posix.AF_UNIX.uint16, sun_path: syslog_socket_fname_a)
   let addr_len {.global.} = Socklen(sizeof(sock_addr))
   if sock == SocketHandle(-1):
     sock = socket(AF_UNIX, SOCK_DGRAM, 0)
@@ -181,7 +181,7 @@ proc emitLog(severity: SyslogSeverity, msg: string) =
   defer: releaseSyslogLock()
   pri = calculate_priority(moduleFacility, severity)
   try:
-    timeStamp = getTime().getLocalTime().format("MMM d HH:mm:ss")
+    timeStamp = getTime().local().format("MMM d HH:mm:ss")
     hostIdent = make_host_ident(moduleIdent.identArrayToString())
     logMsg = "<$#>$# $#$#" % [$pri, $timeStamp, $hostIdent, msg]
     checkSockAndSendInternal(logMsg, flag)
