@@ -5,6 +5,7 @@ A simple syslog module for Nim. Supports Linux, BSD and Mac OS X.
 image:https://img.shields.io/badge/status-beta-orange.svg[badge]
 image:https://img.shields.io/github/tag/FedericoCeratto/nim-syslog.svg[tags]
 image:https://img.shields.io/badge/License-LGPL%20v3-blue.svg[License]
+image:https://circleci.com/gh/FedericoCeratto/nim-syslog.svg?style=svg["CircleCI", link="https://circleci.com/gh/FedericoCeratto/nim-syslog"]
 image:https://api.travis-ci.org/FedericoCeratto/nim-syslog.svg?branch=master[TravisCI]
 
 Usage:

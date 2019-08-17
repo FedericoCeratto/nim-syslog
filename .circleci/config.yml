@@ -1,0 +1,21 @@
+version: 2
+jobs:
+  build:
+    macos:
+      xcode: "11.0.0"
+    steps:
+      - run:
+          name: Git clone
+          command: git clone https://github.com/FedericoCeratto/nim-syslog.git .
+      - run:
+          name: Install Nim
+          command: brew install nim
+      - run:
+          name: Run Unit Tests
+          command: nim c -p=. --threads:off --hints:off --verbosity:0 -r tests/singlethread.nim
+      - run:
+          name: Run Unit Tests
+          command: nim c -p=. --threads:on  --cc:$CC --verbosity:0 -r tests/singlethread.nim
+      - run:
+          name: Run Unit Tests
+          command: nim c -p=. --threads:on  --cc:$CC --verbosity:0 -r tests/multithread.nim
