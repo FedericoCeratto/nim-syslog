@@ -82,7 +82,6 @@ proc identArrayToString(arr: IdentArray): string =
   result = newString(arr.length)
   for i in 0..arr.length-1:
     result[i] = arr.content[i]
-  result[arr.length] = '\0'
 
 proc calculatePriority(facility: SyslogFacility, severity: SyslogSeverity): int =
   ## Calculate priority value
